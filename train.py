@@ -25,6 +25,7 @@ def get_args_parser():
     parser.add_argument('--lr_drop', default=3500, type=int)
     parser.add_argument('--clip_max_norm', default=0.1, type=float,
                         help='gradient clipping max norm')
+    parser.add_argument('--num_classes', default=2, type=int)
 
     # Model parameters
     parser.add_argument('--frozen_weights', type=str, default=None,

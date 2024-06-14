@@ -11,8 +11,8 @@ import scipy.io as io
 class SHHA(Dataset):
     def __init__(self, data_root, transform=None, train=False, patch=False, flip=False):
         self.root_path = data_root
-        self.train_lists = "shanghai_tech_part_a_train.list"
-        self.eval_list = "shanghai_tech_part_a_test.list"
+        self.train_lists = "train.txt"
+        self.eval_list = "test.txt"
         # there may exist multiple list files
         self.img_list_file = self.train_lists.split(',')
         if train:
@@ -50,10 +50,10 @@ class SHHA(Dataset):
         img_path = self.img_list[index]
         gt_path = self.img_map[img_path]
         # load image and ground truth
-        img, point = load_data((img_path, gt_path), self.train)
+        img, point, labels = load_data((img_path, gt_path), self.train)
         # applu augumentation
         if self.transform is not None:
-            img = self.transform(img)
+            img = self.transform(img)  # img: (3, 720, 1280)
 
         if self.train:
             # data augmentation -> random scale
@@ -66,15 +66,16 @@ class SHHA(Dataset):
                 point *= scale
         # random crop augumentaiton
         if self.train and self.patch:
-            img, point = random_crop(img, point)
+            img, point, labels = random_crop(img, point, labels)  # img: (4, 3, 128, 128), point: List(4), 2
             for i, _ in enumerate(point):
                 point[i] = torch.Tensor(point[i])
         # random flipping
         if random.random() > 0.5 and self.train and self.flip:
             # random flip
+            b, c, h, w = img.shape
             img = torch.Tensor(img[:, :, :, ::-1].copy())
             for i, _ in enumerate(point):
-                point[i][:, 0] = 128 - point[i][:, 0]
+                point[i][:, 0] = w - point[i][:, 0]
 
         if not self.train:
             point = [point]
@@ -88,6 +89,7 @@ class SHHA(Dataset):
             image_id = torch.Tensor([image_id]).long()
             target[i]['image_id'] = image_id
             target[i]['labels'] = torch.ones([point[i].shape[0]]).long()
+            target[i]['labels'] = torch.Tensor(labels[i]).long()
 
         return img, target
 
@@ -99,20 +101,26 @@ def load_data(img_gt_path, train):
     img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     # load ground truth points
     points = []
+    labels = []
     with open(gt_path) as f_label:
         for line in f_label:
             x = float(line.strip().split(' ')[0])
             y = float(line.strip().split(' ')[1])
+            label = int(line.strip().split(' ')[2])
             points.append([x, y])
+            labels.append(label)
 
-    return img, np.array(points)
+    return img, np.array(points), np.array(labels)
 
 # random crop augumentation
-def random_crop(img, den, num_patch=4):
-    half_h = 128
-    half_w = 128
+def random_crop(img, den, label, num_patch=4):
+    # half_h = 128
+    # half_w = 128
+    half_h = int(img.shape[1] / 2)
+    half_w = int(img.shape[2] / 2)
     result_img = np.zeros([num_patch, img.shape[0], half_h, half_w])
     result_den = []
+    result_cls = []
     # crop num_patch for each image
     for i in range(num_patch):
         start_h = random.randint(0, img.size(1) - half_h)
@@ -127,7 +135,9 @@ def random_crop(img, den, num_patch=4):
         record_den = den[idx]
         record_den[:, 0] -= start_w
         record_den[:, 1] -= start_h
+        record_cls = label[idx]
 
         result_den.append(record_den)
+        result_cls.append(record_cls)
 
-    return result_img, result_den
+    return result_img, result_den, result_cls
